@@ -5,14 +5,19 @@ on:
     branches:
       - main
       - 'feature/**'
+    tags:
+      - 'v*'
   pull_request:
     branches:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
-    name: Build Debug APK
+    name: Build & Release APK
     runs-on: ubuntu-latest
 
     steps:
@@ -33,9 +38,31 @@ jobs:
       - name: Build Debug APK
         run: gradle assembleDebug --stacktrace
 
-      - name: Upload Debug APK Artifact
+      - name: Prepare APK Asset
+        run: |
+          mkdir -p release-artifacts
+          cp app/build/outputs/apk/debug/*.apk release-artifacts/FlashPoint-debug.apk
+
+      - name: Upload Build Artifact (ZIP fallback)
         uses: actions/upload-artifact@v4
         with:
           name: FlashPoint-debug.apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: release-artifacts/FlashPoint-debug.apk
           if-no-files-found: error
+
+      - name: Publish Direct APK to GitHub Releases
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/feature/init-flashpoint'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'latest' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'FlashPoint (Latest APK)' }}
+          body: |
+            ### FlashPoint ⚡ — Bootable USB & Ventoy Creator for Android
+            
+            100% Free & Open Source (GPLv3).
+            Zero Ads, Zero Tokens, Zero Trackers.
+            
+            - **Commit:** `${{ github.sha }}`
+            - **Download:** Скачай `FlashPoint-debug.apk` ниже напрямую без всяких ZIP-архивов!
+          prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+          files: release-artifacts/FlashPoint-debug.apk
