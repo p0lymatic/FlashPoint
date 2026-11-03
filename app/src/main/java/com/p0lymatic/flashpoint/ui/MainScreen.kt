@@ -200,7 +200,7 @@ fun MainScreen(viewModel: FlashPointViewModel) {
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "Block size: ${state.blockSize} B",
+                                text = "Protocol: USB Mass Storage (SCSI BOT)",
                                 style = MaterialTheme.typography.bodySmall,
                                 fontFamily = FontFamily.Monospace,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -553,8 +553,11 @@ fun MainScreen(viewModel: FlashPointViewModel) {
 
                     Text(
                         text = when (p?.phase) {
+                            BurnPhase.PREPARING -> "Preparing"
                             BurnPhase.WRITING -> "Writing Image"
+                            BurnPhase.VERIFYING -> "Verifying"
                             BurnPhase.COMPLETED -> "Complete"
+                            BurnPhase.CANCELLED -> "Cancelled"
                             BurnPhase.FAILED -> "Failed"
                             null -> "Starting"
                         },
@@ -606,9 +609,10 @@ fun MainScreen(viewModel: FlashPointViewModel) {
 
                     Text(
                         text = when (vp?.phase) {
+                            VentoyPhase.FETCHING_RELEASE -> "Checking Release"
                             VentoyPhase.DOWNLOADING -> "Downloading Package"
-                            VentoyPhase.VERIFYING -> "Verifying"
-                            VentoyPhase.WRITING -> "Writing Bootloader"
+                            VentoyPhase.PARTITIONING -> "Creating Partitions"
+                            VentoyPhase.WRITING_BOOTLOADER -> "Installing Bootloader"
                             VentoyPhase.COMPLETED -> "Installed"
                             VentoyPhase.FAILED -> "Failed"
                             null -> "Starting"
