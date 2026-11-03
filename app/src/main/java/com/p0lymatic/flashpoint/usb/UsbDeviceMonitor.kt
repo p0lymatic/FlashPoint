@@ -19,6 +19,12 @@ class UsbDeviceMonitor(private val context: Context) {
     private val _state = MutableStateFlow<UsbConnectionState>(UsbConnectionState.NoDevice)
     val state: StateFlow<UsbConnectionState> = _state.asStateFlow()
 
+    private val _devices = MutableStateFlow<List<UsbDevice>>(emptyList())
+    val devices: StateFlow<List<UsbDevice>> = _devices.asStateFlow()
+
+    private val _deviceCapacities = MutableStateFlow<Map<Int, Long>>(emptyMap())
+    val deviceCapacities: StateFlow<Map<Int, Long>> = _deviceCapacities.asStateFlow()
+
     private val usbManager: UsbManager =
         context.getSystemService(Context.USB_SERVICE) as UsbManager
 
@@ -27,15 +33,11 @@ class UsbDeviceMonitor(private val context: Context) {
         override fun onReceive(ctx: Context, intent: Intent) {
             when (intent.action) {
                 UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
-                    @Suppress("DEPRECATION")
-                    val device = intent.getParcelableExtra<UsbDevice>(UsbManager.EXTRA_DEVICE)
-                    if (device != null && findMassStorageInterface(device) != null) {
-                        requestPermission(device)
-                    }
+                    scanForDevices()
                 }
 
                 UsbManager.ACTION_USB_DEVICE_DETACHED -> {
-                    _state.value = UsbConnectionState.NoDevice
+                    scanForDevices()
                 }
 
                 ACTION_USB_PERMISSION -> {
@@ -89,12 +91,26 @@ class UsbDeviceMonitor(private val context: Context) {
 
     @SuppressLint("NewApi")
     fun scanForDevices() {
-        val deviceList = usbManager.deviceList
-        for ((_, device) in deviceList) {
-            if (findMassStorageInterface(device) != null) {
-                requestPermission(device)
-                return
+        val storageDevices = usbManager.deviceList.values.filter { findMassStorageInterface(it) != null }
+        _devices.value = storageDevices
+        if (storageDevices.isNotEmpty()) {
+            val currentDevice = (_state.value as? UsbConnectionState.Connected)?.device
+            val target = if (currentDevice != null && storageDevices.any { it.deviceId == currentDevice.deviceId }) {
+                currentDevice
+            } else {
+                storageDevices.first()
             }
+            selectDevice(target)
+        } else {
+            _state.value = UsbConnectionState.NoDevice
+        }
+    }
+
+    fun selectDevice(device: UsbDevice) {
+        if (usbManager.hasPermission(device)) {
+            probeDevice(device)
+        } else {
+            requestPermission(device)
         }
     }
 
@@ -119,6 +135,7 @@ class UsbDeviceMonitor(private val context: Context) {
             val info = streamer.inquiry()
             val (lastLba, blockSize) = streamer.getCapacity()
             val capacityBytes = (lastLba + 1) * blockSize
+            _deviceCapacities.value = _deviceCapacities.value + (device.deviceId to capacityBytes)
             _state.value = UsbConnectionState.Connected(
                 device = device,
                 capacityBytes = capacityBytes,

@@ -26,13 +26,21 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -46,6 +54,9 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -53,6 +64,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -81,6 +93,8 @@ private fun formatTime(seconds: Long): String {
 fun MainScreen(viewModel: FlashPointViewModel) {
     val context = LocalContext.current
     val usbState by viewModel.usbState.collectAsStateWithLifecycle()
+    val availableDevices by viewModel.availableDevices.collectAsStateWithLifecycle()
+    val deviceCapacities by viewModel.deviceCapacities.collectAsStateWithLifecycle()
     val selectedTab by viewModel.selectedTab.collectAsStateWithLifecycle()
     val selectedImageUri by viewModel.selectedImageUri.collectAsStateWithLifecycle()
     val selectedImageName by viewModel.selectedImageName.collectAsStateWithLifecycle()
@@ -170,23 +184,168 @@ fun MainScreen(viewModel: FlashPointViewModel) {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
-                    Text(
-                        text = "Target Drive",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    // Header row: "Target Drive" label + dedicated Refresh Icon Button
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "Target Drive",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (availableDevices.size > 1) {
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = MaterialTheme.colorScheme.primaryContainer
+                                ) {
+                                    Text(
+                                        text = "${availableDevices.size} drives",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        IconButton(
+                            onClick = { viewModel.refreshUsbDevices() },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Refresh devices",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(12.dp))
+
+                    // Device Selector Dropdown (if multiple devices or dropdown trigger is clicked)
+                    var deviceDropdownExpanded by remember { mutableStateOf(false) }
+
+                    if (availableDevices.isNotEmpty()) {
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            Surface(
+                                onClick = { deviceDropdownExpanded = true },
+                                shape = RoundedCornerShape(16.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainer,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    val currentConnectedDevice = (usbState as? UsbConnectionState.Connected)?.device
+                                    val activeDevice = currentConnectedDevice ?: availableDevices.firstOrNull()
+                                    val activeName = activeDevice?.let { dev ->
+                                        listOfNotNull(dev.manufacturerName, dev.productName)
+                                            .filter { it.isNotBlank() }
+                                            .joinToString(" ")
+                                            .ifEmpty { dev.deviceName }
+                                    } ?: "Select Device"
+
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Selected Device",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            text = activeName,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+
+                                    Icon(
+                                        imageVector = Icons.Default.ArrowDropDown,
+                                        contentDescription = "Select target drive",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            DropdownMenu(
+                                expanded = deviceDropdownExpanded,
+                                onDismissRequest = { deviceDropdownExpanded = false },
+                                modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                            ) {
+                                availableDevices.forEach { dev ->
+                                    val isSelected = (usbState as? UsbConnectionState.Connected)?.device?.deviceId == dev.deviceId
+                                    val devName = listOfNotNull(dev.manufacturerName, dev.productName)
+                                        .filter { it.isNotBlank() }
+                                        .joinToString(" ")
+                                        .ifEmpty { "USB Storage (${dev.deviceId})" }
+
+                                    val devCapacity = deviceCapacities[dev.deviceId]?.let { formatBytes(it) }
+                                        ?: if (isSelected && usbState is UsbConnectionState.Connected) {
+                                            formatBytes((usbState as UsbConnectionState.Connected).capacityBytes)
+                                        } else {
+                                            "Capacity on connect"
+                                        }
+
+                                    DropdownMenuItem(
+                                        text = {
+                                            Column {
+                                                Text(
+                                                    text = devName,
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                                Text(
+                                                    text = devCapacity,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        },
+                                        trailingIcon = if (isSelected) {
+                                            {
+                                                Icon(
+                                                    imageVector = Icons.Default.Check,
+                                                    contentDescription = "Selected",
+                                                    tint = MaterialTheme.colorScheme.primary
+                                                )
+                                            }
+                                        } else null,
+                                        onClick = {
+                                            viewModel.selectDevice(dev)
+                                            deviceDropdownExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+                    }
 
                     when (val state = usbState) {
                         is UsbConnectionState.Connected -> {
-                            val deviceName = listOfNotNull(state.vendor, state.model)
+                            val vendor = state.vendor.trim()
+                            val model = state.model.trim()
+                            val driveTitle = listOf(vendor, model)
                                 .filter { it.isNotBlank() }
                                 .joinToString(" ")
                                 .ifEmpty { "USB Storage Device" }
 
                             Text(
-                                text = deviceName,
+                                text = driveTitle,
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurface
@@ -194,22 +353,30 @@ fun MainScreen(viewModel: FlashPointViewModel) {
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 text = formatBytes(state.capacityBytes),
-                                style = MaterialTheme.typography.headlineMedium,
+                                style = MaterialTheme.typography.headlineLarge,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary
                             )
                             Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "Protocol: USB Mass Storage (SCSI BOT)",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontFamily = FontFamily.Monospace,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHighest
+                            ) {
+                                Text(
+                                    text = "USB Mass Storage (SCSI BOT)",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                )
+                            }
                         }
+
                         is UsbConnectionState.PermissionRequested -> {
                             Text(
                                 text = "Permission required",
                                 style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Spacer(modifier = Modifier.height(4.dp))
@@ -219,6 +386,7 @@ fun MainScreen(viewModel: FlashPointViewModel) {
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+
                         is UsbConnectionState.Error -> {
                             Text(
                                 text = state.message,
@@ -226,6 +394,7 @@ fun MainScreen(viewModel: FlashPointViewModel) {
                                 color = MaterialTheme.colorScheme.error
                             )
                         }
+
                         is UsbConnectionState.NoDevice -> {
                             Text(
                                 text = "No drive connected",
@@ -235,7 +404,7 @@ fun MainScreen(viewModel: FlashPointViewModel) {
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Attach USB flash drive via OTG adapter",
+                                text = "Attach USB drive via OTG",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -269,7 +438,7 @@ fun MainScreen(viewModel: FlashPointViewModel) {
                             .clickable { viewModel.selectedTab.value = 0 }
                     ) {
                         Text(
-                            text = "Raw Image",
+                            text = "Image",
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = if (rawSelected) FontWeight.Bold else FontWeight.Medium,
                             color = if (rawSelected) MaterialTheme.colorScheme.onPrimaryContainer
@@ -301,7 +470,7 @@ fun MainScreen(viewModel: FlashPointViewModel) {
                 }
             }
 
-            // Mode Configuration Section
+            // Options Card: Raw Image Mode
             AnimatedVisibility(
                 visible = selectedTab == 0,
                 enter = fadeIn() + expandVertically(),
@@ -377,6 +546,7 @@ fun MainScreen(viewModel: FlashPointViewModel) {
                 }
             }
 
+            // Options Card: Ventoy Setup Mode
             AnimatedVisibility(
                 visible = selectedTab == 1,
                 enter = fadeIn() + expandVertically(),
@@ -395,12 +565,30 @@ fun MainScreen(viewModel: FlashPointViewModel) {
                             horizontalArrangement = Arrangement.SpaceBetween,
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text(
-                                text = "Ventoy Version",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "Ventoy Version",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                ventoyRelease?.let { release ->
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = MaterialTheme.colorScheme.secondaryContainer
+                                    ) {
+                                        Text(
+                                            text = release.version,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                            }
+
                             FilledTonalButton(
                                 onClick = { viewModel.fetchVentoyRelease() },
                                 shape = RoundedCornerShape(16.dp)
@@ -434,11 +622,17 @@ fun MainScreen(viewModel: FlashPointViewModel) {
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
-                                    Text(
-                                        text = "Official Release",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.secondary
-                                    )
+                                    Surface(
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = MaterialTheme.colorScheme.secondaryContainer
+                                    ) {
+                                        Text(
+                                            text = "Official Release",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
                                 }
                             }
                             Spacer(modifier = Modifier.height(16.dp))
@@ -606,6 +800,7 @@ fun MainScreen(viewModel: FlashPointViewModel) {
                 } else {
                     val vp = ventoyProgress
                     val fraction = if (vp != null) (vp.progressPercent / 100f).coerceIn(0f, 1f) else 0f
+                    val percent = (fraction * 100).toInt()
 
                     Text(
                         text = when (vp?.phase) {
@@ -620,6 +815,13 @@ fun MainScreen(viewModel: FlashPointViewModel) {
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "$percent%",
+                        style = MaterialTheme.typography.headlineLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     LinearProgressIndicator(

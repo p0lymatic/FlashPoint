@@ -2,6 +2,7 @@ package com.p0lymatic.flashpoint.ui
 
 import android.app.Application
 import android.net.Uri
+import android.hardware.usb.UsbDevice
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.p0lymatic.flashpoint.core.BurnProgress
@@ -26,6 +27,16 @@ class FlashPointViewModel(application: Application) : AndroidViewModel(applicati
     private val usbMonitor = UsbDeviceMonitor(application)
 
     val usbState: StateFlow<UsbConnectionState> = usbMonitor.state
+    val availableDevices = usbMonitor.devices
+    val deviceCapacities = usbMonitor.deviceCapacities
+
+    fun refreshUsbDevices() {
+        usbMonitor.scanForDevices()
+    }
+
+    fun selectDevice(device: UsbDevice) {
+        usbMonitor.selectDevice(device)
+    }
 
     val selectedTab = MutableStateFlow(0)
     val selectedImageUri = MutableStateFlow<Uri?>(null)
