@@ -4,6 +4,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -39,7 +40,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.p0lymatic.flashpoint.R
 import com.p0lymatic.flashpoint.ui.components.NonagonCookieShape
 
@@ -47,7 +47,8 @@ private data class Contributor(
     val name: String,
     val role: String,
     val githubUrl: String,
-    val avatarResId: Int
+    val avatarResId: Int,
+    val isAi: Boolean = false
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -84,13 +85,15 @@ fun AboutScreen(onBack: () -> Unit) {
             name = "Google Gemini",
             role = "Implementation & Refactoring",
             githubUrl = "https://github.com/google-gemini",
-            avatarResId = R.drawable.gemini
+            avatarResId = R.drawable.gemini,
+            isAi = true
         ),
         Contributor(
             name = "Anthropic Claude",
             role = "Foundation & Core Architecture",
             githubUrl = "https://github.com/anthropics",
-            avatarResId = R.drawable.claude
+            avatarResId = R.drawable.claude,
+            isAi = true
         )
     )
 
@@ -145,7 +148,7 @@ fun AboutScreen(onBack: () -> Unit) {
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Version 1.0.3 (GPL-3.0)",
+                        text = "Version 1.0.4 (GPL-3.0)",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -167,8 +170,9 @@ fun AboutScreen(onBack: () -> Unit) {
                 modifier = Modifier.padding(start = 4.dp, top = 8.dp)
             )
 
-            // Contributors Grid/List
+            // Contributors List
             val cookieShape = NonagonCookieShape(points = 9, innerRadiusRatio = 0.85f)
+            val aiLogoShape = RoundedCornerShape(16.dp)
 
             contributors.forEach { contributor ->
                 Card(
@@ -184,22 +188,47 @@ fun AboutScreen(onBack: () -> Unit) {
                             .padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // 9-sided Cookie Avatar
-                        Surface(
-                            shape = cookieShape,
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            modifier = Modifier
-                                .size(56.dp)
-                                .border(2.dp, MaterialTheme.colorScheme.primary, cookieShape)
-                        ) {
-                            Image(
-                                painter = painterResource(id = contributor.avatarResId),
-                                contentDescription = contributor.name,
-                                contentScale = ContentScale.Crop,
+                        if (contributor.isAi) {
+                            // Clean AI Logo with tight outline (no cookie)
+                            Surface(
+                                shape = aiLogoShape,
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
                                 modifier = Modifier
-                                    .fillMaxSize()
-                                    .clip(cookieShape)
-                            )
+                                    .size(56.dp)
+                                    .border(1.5.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.7f), aiLogoShape)
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(8.dp)
+                                ) {
+                                    Image(
+                                        painter = painterResource(id = contributor.avatarResId),
+                                        contentDescription = contributor.name,
+                                        contentScale = ContentScale.Fit,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
+                            }
+                        } else {
+                            // 9-sided Cookie Avatar for human contributors
+                            Surface(
+                                shape = cookieShape,
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .border(2.dp, MaterialTheme.colorScheme.primary, cookieShape)
+                            ) {
+                                Image(
+                                    painter = painterResource(id = contributor.avatarResId),
+                                    contentDescription = contributor.name,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clip(cookieShape)
+                                )
+                            }
                         }
 
                         Spacer(modifier = Modifier.width(16.dp))

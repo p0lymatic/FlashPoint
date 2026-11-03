@@ -62,6 +62,8 @@ class FlashPointViewModel(application: Application) : AndroidViewModel(applicati
     val offlineVentoyFileExists = MutableStateFlow(false)
 
     val selectedPartitionScheme = MutableStateFlow(PartitionScheme.GPT)
+    val selectedArchitecture = MutableStateFlow(com.p0lymatic.flashpoint.core.TargetArchitecture.X86_64)
+    val isChangelogExploded = MutableStateFlow(false)
     val showCancelDialog = MutableStateFlow(false)
 
     private var burnJob: Job? = null

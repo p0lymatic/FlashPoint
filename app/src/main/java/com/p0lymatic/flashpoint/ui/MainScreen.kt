@@ -2,6 +2,7 @@ package com.p0lymatic.flashpoint.ui
 
 import android.net.Uri
 import android.provider.OpenableColumns
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -35,6 +36,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
@@ -100,6 +102,11 @@ private fun formatTime(seconds: Long): String {
 @Composable
 fun MainScreen(viewModel: FlashPointViewModel) {
     var showAboutScreen by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = showAboutScreen) {
+        showAboutScreen = false
+    }
+
     if (showAboutScreen) {
         AboutScreen(onBack = { showAboutScreen = false })
         return
@@ -116,6 +123,8 @@ fun MainScreen(viewModel: FlashPointViewModel) {
     val ventoyRelease by viewModel.ventoyRelease.collectAsStateWithLifecycle()
     val ventoyProgress by viewModel.ventoyInstallProgress.collectAsStateWithLifecycle()
     val selectedScheme by viewModel.selectedPartitionScheme.collectAsStateWithLifecycle()
+    val selectedArch by viewModel.selectedArchitecture.collectAsStateWithLifecycle()
+    val isChangelogExploded by viewModel.isChangelogExploded.collectAsStateWithLifecycle()
     val isCheckingVentoy by viewModel.isCheckingVentoy.collectAsStateWithLifecycle()
     val isDownloadingOffline by viewModel.isDownloadingOfflineVentoy.collectAsStateWithLifecycle()
     val offlineReady by viewModel.offlineVentoyFileExists.collectAsStateWithLifecycle()
@@ -670,14 +679,16 @@ fun MainScreen(viewModel: FlashPointViewModel) {
                                                 Surface(
                                                     shape = RoundedCornerShape(12.dp),
                                                     color = MaterialTheme.colorScheme.primaryContainer,
-                                                    modifier = Modifier.padding(end = 4.dp)
+                                                    modifier = Modifier.size(36.dp)
                                                 ) {
-                                                    Text(
-                                                        text = "Offline Ready",
-                                                        style = MaterialTheme.typography.labelSmall,
-                                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                                    )
+                                                    Box(contentAlignment = Alignment.Center) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Done,
+                                                            contentDescription = "Cached offline",
+                                                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                            modifier = Modifier.size(20.dp)
+                                                        )
+                                                    }
                                                 }
                                             } else {
                                                 FilledTonalButton(
@@ -694,13 +705,53 @@ fun MainScreen(viewModel: FlashPointViewModel) {
                                                         Spacer(modifier = Modifier.width(6.dp))
                                                         Text("Saving...")
                                                     } else {
-                                                        Text("Save Offline")
+                                                        Text("Save")
                                                     }
                                                 }
                                             }
                                         }
                                     }
                                 }
+
+                                // Explode Changelog Card
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(18.dp),
+                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { viewModel.isChangelogExploded.value = !isChangelogExploded }
+                                ) {
+                                    Column(modifier = Modifier.padding(14.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "Release Changelog",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            Text(
+                                                text = if (isChangelogExploded) "Collapse" else "Explode",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                        if (isChangelogExploded) {
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Text(
+                                                text = release.changelog.ifBlank { "Support for dynamic multiboot, Secure Boot bypass, and live persistence updates." },
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                }
+
                                 Spacer(modifier = Modifier.height(16.dp))
                             }
 
@@ -755,6 +806,45 @@ fun MainScreen(viewModel: FlashPointViewModel) {
                                         color = if (isMbr) MaterialTheme.colorScheme.onPrimaryContainer
                                         else MaterialTheme.colorScheme.onSurfaceVariant
                                     )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "Target Architecture",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                listOf(
+                                    com.p0lymatic.flashpoint.core.TargetArchitecture.X86_64 to "x86_64",
+                                    com.p0lymatic.flashpoint.core.TargetArchitecture.IA32 to "IA32",
+                                    com.p0lymatic.flashpoint.core.TargetArchitecture.ARM64 to "ARM64"
+                                ).forEach { (arch, label) ->
+                                    val isSel = selectedArch == arch
+                                    Box(
+                                        contentAlignment = Alignment.Center,
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(40.dp)
+                                            .clip(RoundedCornerShape(20.dp))
+                                            .background(
+                                                if (isSel) MaterialTheme.colorScheme.primaryContainer
+                                                else MaterialTheme.colorScheme.surfaceContainerHigh
+                                            )
+                                            .clickable { viewModel.selectedArchitecture.value = arch }
+                                    ) {
+                                        Text(
+                                            text = label,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
+                                            color = if (isSel) MaterialTheme.colorScheme.onPrimaryContainer
+                                            else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
                                 }
                             }
                         }

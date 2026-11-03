@@ -23,8 +23,11 @@ data class VentoyRelease(
     val version: String,
     val downloadUrl: String,
     val publishedAt: String,
-    val assetSize: Long
+    val assetSize: Long,
+    val changelog: String = ""
 )
+
+enum class TargetArchitecture { X86_64, IA32, ARM64 }
 
 enum class PartitionScheme { MBR, GPT }
 
