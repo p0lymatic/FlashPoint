@@ -35,34 +35,45 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
+      - name: Extract App Version
+        id: get_version
+        run: |
+          VERSION=$(grep 'versionName = ' app/build.gradle.kts | cut -d '"' -f 2)
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
       - name: Build Debug APK
         run: gradle assembleDebug --stacktrace
 
       - name: Prepare APK Asset
         run: |
           mkdir -p release-artifacts
-          cp app/build/outputs/apk/debug/*.apk release-artifacts/FlashPoint-debug.apk
+          cp app/build/outputs/apk/debug/*.apk release-artifacts/FlashPoint-v${{ env.VERSION }}.apk
+          cp release-artifacts/FlashPoint-v${{ env.VERSION }}.apk release-artifacts/FlashPoint.apk
 
       - name: Upload Build Artifact (ZIP fallback)
         uses: actions/upload-artifact@v4
         with:
-          name: FlashPoint-debug.apk
-          path: release-artifacts/FlashPoint-debug.apk
+          name: FlashPoint-v${{ env.VERSION }}.apk
+          path: release-artifacts/FlashPoint-v${{ env.VERSION }}.apk
           if-no-files-found: error
 
       - name: Publish Direct APK to GitHub Releases
         if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/feature/init-flashpoint'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'latest' }}
-          name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'FlashPoint (Latest APK)' }}
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('v{0}', env.VERSION) }}
+          name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('FlashPoint v{0}', env.VERSION) }}
           body: |
-            ### FlashPoint ⚡ — Bootable USB & Ventoy Creator for Android
+            ### FlashPoint v${{ env.VERSION }}
             
             100% Free & Open Source (GPLv3).
             Zero Ads, Zero Tokens, Zero Trackers.
             
+            - **Version:** `${{ env.VERSION }}`
             - **Commit:** `${{ github.sha }}`
-            - **Download:** Скачай `FlashPoint-debug.apk` ниже напрямую без всяких ZIP-архивов!
-          prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-          files: release-artifacts/FlashPoint-debug.apk
+            - **Download:** Скачай `FlashPoint-v${{ env.VERSION }}.apk` ниже напрямую!
+          prerelease: false
+          files: |
+            release-artifacts/FlashPoint-v${{ env.VERSION }}.apk
+            release-artifacts/FlashPoint.apk
