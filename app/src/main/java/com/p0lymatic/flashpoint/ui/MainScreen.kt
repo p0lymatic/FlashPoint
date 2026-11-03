@@ -4,7 +4,14 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,19 +24,21 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -37,13 +46,15 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.p0lymatic.flashpoint.core.BurnPhase
 import com.p0lymatic.flashpoint.core.PartitionScheme
@@ -68,55 +79,568 @@ private fun formatTime(seconds: Long): String {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(viewModel: FlashPointViewModel) {
+    val context = LocalContext.current
     val usbState by viewModel.usbState.collectAsStateWithLifecycle()
     val selectedTab by viewModel.selectedTab.collectAsStateWithLifecycle()
+    val selectedImageUri by viewModel.selectedImageUri.collectAsStateWithLifecycle()
+    val selectedImageName by viewModel.selectedImageName.collectAsStateWithLifecycle()
+    val isBurning by viewModel.isBurning.collectAsStateWithLifecycle()
+    val burnProgress by viewModel.burnProgress.collectAsStateWithLifecycle()
+    val ventoyRelease by viewModel.ventoyRelease.collectAsStateWithLifecycle()
+    val ventoyProgress by viewModel.ventoyInstallProgress.collectAsStateWithLifecycle()
+    val selectedScheme by viewModel.selectedPartitionScheme.collectAsStateWithLifecycle()
     val showCancelDialog by viewModel.showCancelDialog.collectAsStateWithLifecycle()
 
+    val filePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        uri?.let {
+            var name: String? = null
+            context.contentResolver.query(it, null, null, null, null)?.use { cursor ->
+                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (cursor.moveToFirst() && nameIndex >= 0) {
+                    name = cursor.getString(nameIndex)
+                }
+            }
+            viewModel.onImageSelected(it, name ?: it.lastPathSegment)
+        }
+    }
+
+    val isConnected = usbState is UsbConnectionState.Connected
+    val isInstalling = ventoyProgress != null &&
+            ventoyProgress?.phase != VentoyPhase.COMPLETED &&
+            ventoyProgress?.phase != VentoyPhase.FAILED
+    val isBusy = isBurning || isInstalling
+
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = {
                     Text(
-                        text = "FlashPoint ⚡",
+                        text = "FlashPoint",
                         fontWeight = FontWeight.Bold,
+                        letterSpacing = (-0.5).sp,
+                        color = MaterialTheme.colorScheme.onBackground
                     )
                 },
                 actions = {
-                    val isConnected = usbState is UsbConnectionState.Connected
-                    val dotColor = if (isConnected) Color(0xFF00E676) else Color(0xFFFF1744)
-                    Canvas(modifier = Modifier.size(12.dp)) {
-                        drawCircle(color = dotColor)
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = if (isConnected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                        modifier = Modifier.padding(end = 16.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Canvas(modifier = Modifier.size(8.dp)) {
+                                drawCircle(color = if (isConnected) Color(0xFF00E599) else Color(0xFF757575))
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (isConnected) "Connected" else "No Drive",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Medium,
+                                color = if (isConnected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
-                    Spacer(modifier = Modifier.width(16.dp))
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    titleContentColor = MaterialTheme.colorScheme.primary,
-                ),
+                    containerColor = MaterialTheme.colorScheme.background
+                )
             )
-        },
+        }
     ) { paddingValues ->
-        Column(modifier = Modifier.padding(paddingValues)) {
-            TabRow(
-                selectedTabIndex = selectedTab,
-                containerColor = MaterialTheme.colorScheme.surface,
-                contentColor = MaterialTheme.colorScheme.primary,
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Target Drive Card
+            Card(
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                ),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Tab(
-                    selected = selectedTab == 0,
-                    onClick = { viewModel.selectedTab.value = 0 },
-                    text = { Text("ISO Burner") },
-                )
-                Tab(
-                    selected = selectedTab == 1,
-                    onClick = { viewModel.selectedTab.value = 1 },
-                    text = { Text("Ventoy Setup") },
-                )
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text(
+                        text = "Target Drive",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    when (val state = usbState) {
+                        is UsbConnectionState.Connected -> {
+                            val deviceName = listOfNotNull(state.vendor, state.model)
+                                .filter { it.isNotBlank() }
+                                .joinToString(" ")
+                                .ifEmpty { "USB Storage Device" }
+
+                            Text(
+                                text = deviceName,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = formatBytes(state.capacityBytes),
+                                style = MaterialTheme.typography.headlineMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Block size: ${state.blockSize} B",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        is UsbConnectionState.PermissionRequested -> {
+                            Text(
+                                text = "Permission required",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Allow USB host access when prompted",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        is UsbConnectionState.Error -> {
+                            Text(
+                                text = state.message,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                        is UsbConnectionState.NoDevice -> {
+                            Text(
+                                text = "No drive connected",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Attach USB flash drive via OTG adapter",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
             }
 
-            when (selectedTab) {
-                0 -> IsoBurnerTab(viewModel, usbState)
-                1 -> VentoySetupTab(viewModel, usbState)
+            // Mode Selector
+            Surface(
+                shape = RoundedCornerShape(28.dp),
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(4.dp)
+                ) {
+                    val rawSelected = selectedTab == 0
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp)
+                            .clip(RoundedCornerShape(24.dp))
+                            .background(
+                                if (rawSelected) MaterialTheme.colorScheme.primaryContainer
+                                else Color.Transparent
+                            )
+                            .clickable { viewModel.selectedTab.value = 0 }
+                    ) {
+                        Text(
+                            text = "Raw Image",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = if (rawSelected) FontWeight.Bold else FontWeight.Medium,
+                            color = if (rawSelected) MaterialTheme.colorScheme.onPrimaryContainer
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    val ventoySelected = selectedTab == 1
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp)
+                            .clip(RoundedCornerShape(24.dp))
+                            .background(
+                                if (ventoySelected) MaterialTheme.colorScheme.primaryContainer
+                                else Color.Transparent
+                            )
+                            .clickable { viewModel.selectedTab.value = 1 }
+                    ) {
+                        Text(
+                            text = "Ventoy Setup",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = if (ventoySelected) FontWeight.Bold else FontWeight.Medium,
+                            color = if (ventoySelected) MaterialTheme.colorScheme.onPrimaryContainer
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            // Mode Configuration Section
+            AnimatedVisibility(
+                visible = selectedTab == 0,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                Card(
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(20.dp)) {
+                        Text(
+                            text = "Source Image",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        if (selectedImageUri != null) {
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Text(
+                                        text = selectedImageName ?: "Selected Image",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = selectedImageUri.toString(),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontFamily = FontFamily.Monospace,
+                                        maxLines = 1,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                            OutlinedButton(
+                                onClick = { filePicker.launch(arrayOf("*/*")) },
+                                shape = RoundedCornerShape(20.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Change File")
+                            }
+                        } else {
+                            Button(
+                                onClick = { filePicker.launch(arrayOf("*/*")) },
+                                shape = RoundedCornerShape(20.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(52.dp)
+                            ) {
+                                Text(
+                                    text = "Select Image File",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            AnimatedVisibility(
+                visible = selectedTab == 1,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                Card(
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(20.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "Ventoy Version",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            FilledTonalButton(
+                                onClick = { viewModel.fetchVentoyRelease() },
+                                shape = RoundedCornerShape(16.dp)
+                            ) {
+                                Text("Check Latest")
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        ventoyRelease?.let { release ->
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    modifier = Modifier.padding(16.dp)
+                                ) {
+                                    Column {
+                                        Text(
+                                            text = "Ventoy ${release.version}",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        Text(
+                                            text = formatBytes(release.assetSize),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Text(
+                                        text = "Official Release",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.secondary
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(16.dp))
+                        }
+
+                        Text(
+                            text = "Partition Scheme",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            val isGpt = selectedScheme == PartitionScheme.GPT
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(44.dp)
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .background(
+                                        if (isGpt) MaterialTheme.colorScheme.primaryContainer
+                                        else MaterialTheme.colorScheme.surfaceContainerHigh
+                                    )
+                                    .clickable { viewModel.selectedPartitionScheme.value = PartitionScheme.GPT }
+                            ) {
+                                Text(
+                                    text = "GPT (UEFI)",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = if (isGpt) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isGpt) MaterialTheme.colorScheme.onPrimaryContainer
+                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            val isMbr = selectedScheme == PartitionScheme.MBR
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(44.dp)
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .background(
+                                        if (isMbr) MaterialTheme.colorScheme.primaryContainer
+                                        else MaterialTheme.colorScheme.surfaceContainerHigh
+                                    )
+                                    .clickable { viewModel.selectedPartitionScheme.value = PartitionScheme.MBR }
+                            ) {
+                                Text(
+                                    text = "MBR (Legacy)",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = if (isMbr) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isMbr) MaterialTheme.colorScheme.onPrimaryContainer
+                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Primary Action Button
+            val canStartRaw = isConnected && selectedImageUri != null && !isBusy
+            val canStartVentoy = isConnected && ventoyRelease != null && !isBusy
+
+            Button(
+                onClick = {
+                    if (selectedTab == 0) viewModel.startBurn()
+                    else viewModel.installVentoy()
+                },
+                enabled = if (selectedTab == 0) canStartRaw else canStartVentoy,
+                shape = RoundedCornerShape(28.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+            ) {
+                Text(
+                    text = if (selectedTab == 0) "Write Image" else "Install Ventoy",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+
+    // Modal Progress Sheet
+    val showProgress = isBurning || isInstalling
+    if (showProgress) {
+        ModalBottomSheet(
+            onDismissRequest = { viewModel.showCancelDialog.value = true },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                if (selectedTab == 0) {
+                    val p = burnProgress
+                    val fraction = if (p != null && p.totalBytes > 0) (p.bytesWritten.toFloat() / p.totalBytes).coerceIn(0f, 1f) else 0f
+                    val percent = (fraction * 100).toInt()
+
+                    Text(
+                        text = when (p?.phase) {
+                            BurnPhase.WRITING -> "Writing Image"
+                            BurnPhase.COMPLETED -> "Complete"
+                            BurnPhase.FAILED -> "Failed"
+                            null -> "Starting"
+                        },
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "$percent%",
+                        style = MaterialTheme.typography.headlineLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    LinearProgressIndicator(
+                        progress = { fraction },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .clip(RoundedCornerShape(4.dp)),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    p?.let {
+                        Row(
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "%.1f MB/s".format(it.bytesPerSecond / 1_000_000.0),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontFamily = FontFamily.Monospace,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "ETA ${formatTime(it.etaSeconds)}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontFamily = FontFamily.Monospace,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                } else {
+                    val vp = ventoyProgress
+                    val fraction = if (vp != null) (vp.progressPercent / 100f).coerceIn(0f, 1f) else 0f
+
+                    Text(
+                        text = when (vp?.phase) {
+                            VentoyPhase.DOWNLOADING -> "Downloading Package"
+                            VentoyPhase.VERIFYING -> "Verifying"
+                            VentoyPhase.WRITING -> "Writing Bootloader"
+                            VentoyPhase.COMPLETED -> "Installed"
+                            VentoyPhase.FAILED -> "Failed"
+                            null -> "Starting"
+                        },
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    LinearProgressIndicator(
+                        progress = { fraction },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .clip(RoundedCornerShape(4.dp)),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+                OutlinedButton(
+                    onClick = { viewModel.showCancelDialog.value = true },
+                    shape = RoundedCornerShape(20.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Cancel")
+                }
+                Spacer(modifier = Modifier.height(16.dp))
             }
         }
     }
@@ -124,364 +648,25 @@ fun MainScreen(viewModel: FlashPointViewModel) {
     if (showCancelDialog) {
         AlertDialog(
             onDismissRequest = { viewModel.showCancelDialog.value = false },
-            title = { Text("Cancel Burn?") },
-            text = { Text("Are you sure you want to cancel the burn operation? The USB drive may be left in an unusable state.") },
+            title = { Text("Abort Operation") },
+            text = { Text("Interrupting the write process may leave the USB drive in an unbootable state. Continue?") },
             confirmButton = {
-                TextButton(onClick = { viewModel.cancelBurn() }) {
-                    Text("Cancel Burn", color = MaterialTheme.colorScheme.error)
+                TextButton(
+                    onClick = {
+                        if (selectedTab == 0) viewModel.cancelBurn()
+                        else viewModel.cancelVentoyInstall()
+                    }
+                ) {
+                    Text("Abort", color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { viewModel.showCancelDialog.value = false }) {
-                    Text("Continue")
+                    Text("Keep Writing")
                 }
             },
+            shape = RoundedCornerShape(24.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
         )
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun IsoBurnerTab(
-    viewModel: FlashPointViewModel,
-    usbState: UsbConnectionState,
-) {
-    val context = LocalContext.current
-    val selectedImageUri by viewModel.selectedImageUri.collectAsStateWithLifecycle()
-    val selectedImageName by viewModel.selectedImageName.collectAsStateWithLifecycle()
-    val isBurning by viewModel.isBurning.collectAsStateWithLifecycle()
-    val burnProgress by viewModel.burnProgress.collectAsStateWithLifecycle()
-
-    val launcher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument(),
-    ) { uri: Uri? ->
-        if (uri != null) {
-            val displayName = context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    if (idx >= 0) cursor.getString(idx) else null
-                } else null
-            }
-            viewModel.onImageSelected(uri, displayName)
-        }
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        Button(
-            onClick = { launcher.launch(arrayOf("*/*")) },
-            modifier = Modifier.fillMaxWidth(),
-            enabled = !isBurning,
-        ) {
-            Text("Select ISO Image")
-        }
-
-        if (selectedImageName != null) {
-            Text(
-                text = "Selected: ${selectedImageName}",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary,
-            )
-        }
-
-        when (usbState) {
-            is UsbConnectionState.Connected -> {
-                val connected = usbState as UsbConnectionState.Connected
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(8.dp),
-                ) {
-                    Text(
-                        text = "USB Device Connected",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Vendor: ${connected.vendor}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Text(
-                        text = "Model: ${connected.model}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Text(
-                        text = "Capacity: ${formatBytes(connected.capacityBytes)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                }
-            }
-            is UsbConnectionState.NoDevice -> {
-                Text(
-                    text = "No USB drive connected",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            is UsbConnectionState.PermissionRequested -> {
-                Text(
-                    text = "Requesting USB permission…",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.secondary,
-                )
-            }
-            is UsbConnectionState.Error -> {
-                val err = usbState as UsbConnectionState.Error
-                Text(
-                    text = "USB Error: ${err.message}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-        }
-
-        Button(
-            onClick = { viewModel.startBurn() },
-            modifier = Modifier.fillMaxWidth(),
-            enabled = selectedImageUri != null
-                    && usbState is UsbConnectionState.Connected
-                    && !isBurning,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-            ),
-        ) {
-            Text("Start Burn")
-        }
-    }
-
-    if (isBurning && burnProgress != null) {
-        val progress = burnProgress!!
-        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
-        ModalBottomSheet(
-            onDismissRequest = { /* prevent dismissing while burning */ },
-            sheetState = sheetState,
-            containerColor = MaterialTheme.colorScheme.surface,
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text(
-                    text = "Burning Image…",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-
-                val fraction = if (progress.totalBytes > 0) {
-                    (progress.bytesWritten.toFloat() / progress.totalBytes).coerceIn(0f, 1f)
-                } else 0f
-
-                LinearProgressIndicator(
-                    progress = { fraction },
-                    modifier = Modifier.fillMaxWidth(),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                )
-
-                Text(
-                    text = "%.1f MB/s".format(progress.bytesPerSecond / 1_000_000.0),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-
-                val elapsedSeconds = if (progress.bytesPerSecond > 0) {
-                    (progress.bytesWritten / progress.bytesPerSecond).toLong()
-                } else 0L
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(
-                        text = "Elapsed: ${formatTime(elapsedSeconds)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Text(
-                        text = "ETA: ${formatTime(progress.etaSeconds)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                }
-
-                Text(
-                    text = "${formatBytes(progress.bytesWritten)} / ${formatBytes(progress.totalBytes)}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-
-                val sha256Display = if (progress.sha256Hex.length > 16) {
-                    progress.sha256Hex.substring(0, 16) + "…"
-                } else {
-                    progress.sha256Hex
-                }
-                Text(
-                    text = "SHA256: $sha256Display",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
-                OutlinedButton(
-                    onClick = { viewModel.showCancelDialog.value = true },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error,
-                    ),
-                ) {
-                    Text("Cancel")
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun VentoySetupTab(
-    viewModel: FlashPointViewModel,
-    usbState: UsbConnectionState,
-) {
-    val ventoyRelease by viewModel.ventoyRelease.collectAsStateWithLifecycle()
-    val ventoyInstallProgress by viewModel.ventoyInstallProgress.collectAsStateWithLifecycle()
-    val selectedScheme by viewModel.selectedPartitionScheme.collectAsStateWithLifecycle()
-
-    val isInstalling = ventoyInstallProgress != null
-            && ventoyInstallProgress!!.phase != VentoyPhase.COMPLETED
-            && ventoyInstallProgress!!.phase != VentoyPhase.FAILED
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        Button(
-            onClick = { viewModel.fetchVentoyRelease() },
-            modifier = Modifier.fillMaxWidth(),
-            enabled = !isInstalling,
-        ) {
-            Text("Check Latest Version")
-        }
-
-        if (ventoyRelease != null) {
-            val release = ventoyRelease!!
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp),
-            ) {
-                Text(
-                    text = "Ventoy ${release.version}",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Published: ${release.publishedAt}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    text = "Download size: ${formatBytes(release.assetSize)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-            }
-        }
-
-        Text(
-            text = "Partition Scheme",
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            RadioButton(
-                selected = selectedScheme == PartitionScheme.MBR,
-                onClick = { viewModel.selectedPartitionScheme.value = PartitionScheme.MBR },
-                enabled = !isInstalling,
-            )
-            Text(
-                text = "MBR",
-                modifier = Modifier.padding(end = 24.dp),
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            RadioButton(
-                selected = selectedScheme == PartitionScheme.GPT,
-                onClick = { viewModel.selectedPartitionScheme.value = PartitionScheme.GPT },
-                enabled = !isInstalling,
-            )
-            Text(
-                text = "GPT",
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-        }
-
-        Button(
-            onClick = { viewModel.installVentoy() },
-            modifier = Modifier.fillMaxWidth(),
-            enabled = ventoyRelease != null
-                    && usbState is UsbConnectionState.Connected
-                    && !isInstalling,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-            ),
-        ) {
-            Text("Install Ventoy")
-        }
-
-        if (ventoyInstallProgress != null) {
-            val progress = ventoyInstallProgress!!
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text(
-                    text = progress.message,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = when (progress.phase) {
-                        VentoyPhase.COMPLETED -> MaterialTheme.colorScheme.primary
-                        VentoyPhase.FAILED -> MaterialTheme.colorScheme.error
-                        else -> MaterialTheme.colorScheme.onSurface
-                    },
-                )
-
-                if (progress.phase != VentoyPhase.COMPLETED && progress.phase != VentoyPhase.FAILED) {
-                    LinearProgressIndicator(
-                        progress = { (progress.progressPercent / 100f).coerceIn(0f, 1f) },
-                        modifier = Modifier.fillMaxWidth(),
-                        color = MaterialTheme.colorScheme.primary,
-                        trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                    )
-
-                    OutlinedButton(
-                        onClick = { viewModel.cancelVentoyInstall() },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.error,
-                        ),
-                    ) {
-                        Text("Cancel")
-                    }
-                }
-            }
-        }
     }
 }
