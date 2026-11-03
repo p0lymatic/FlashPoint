@@ -5,6 +5,10 @@ import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -14,12 +18,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -29,12 +35,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -91,6 +99,11 @@ private fun formatTime(seconds: Long): String {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(viewModel: FlashPointViewModel) {
+    var showAboutScreen by remember { mutableStateOf(false) }
+    if (showAboutScreen) {
+        AboutScreen(onBack = { showAboutScreen = false })
+        return
+    }
     val context = LocalContext.current
     val usbState by viewModel.usbState.collectAsStateWithLifecycle()
     val availableDevices by viewModel.availableDevices.collectAsStateWithLifecycle()
@@ -103,6 +116,9 @@ fun MainScreen(viewModel: FlashPointViewModel) {
     val ventoyRelease by viewModel.ventoyRelease.collectAsStateWithLifecycle()
     val ventoyProgress by viewModel.ventoyInstallProgress.collectAsStateWithLifecycle()
     val selectedScheme by viewModel.selectedPartitionScheme.collectAsStateWithLifecycle()
+    val isCheckingVentoy by viewModel.isCheckingVentoy.collectAsStateWithLifecycle()
+    val isDownloadingOffline by viewModel.isDownloadingOfflineVentoy.collectAsStateWithLifecycle()
+    val offlineReady by viewModel.offlineVentoyFileExists.collectAsStateWithLifecycle()
     val showCancelDialog by viewModel.showCancelDialog.collectAsStateWithLifecycle()
 
     val filePicker = rememberLauncherForActivityResult(
@@ -159,6 +175,17 @@ fun MainScreen(viewModel: FlashPointViewModel) {
                                 color = if (isConnected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                    }
+
+                    IconButton(
+                        onClick = { showAboutScreen = true },
+                        modifier = Modifier.padding(end = 8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = "About",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -415,280 +442,320 @@ fun MainScreen(viewModel: FlashPointViewModel) {
 
             // Mode Selector
             Surface(
-                shape = RoundedCornerShape(28.dp),
+                shape = RoundedCornerShape(32.dp),
                 color = MaterialTheme.colorScheme.surfaceContainer,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Row(
+                BoxWithConstraints(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(4.dp)
                 ) {
-                    val rawSelected = selectedTab == 0
+                    val pillWidth = maxWidth / 2
+                    val pillOffset by animateDpAsState(
+                        targetValue = if (selectedTab == 0) 0.dp else pillWidth,
+                        animationSpec = spring(
+                            dampingRatio = 0.76f,
+                            stiffness = Spring.StiffnessMediumLow
+                        ),
+                        label = "pillSpringAnimation"
+                    )
+
                     Box(
-                        contentAlignment = Alignment.Center,
                         modifier = Modifier
-                            .weight(1f)
+                            .offset(x = pillOffset)
+                            .width(pillWidth)
                             .height(44.dp)
-                            .clip(RoundedCornerShape(24.dp))
-                            .background(
-                                if (rawSelected) MaterialTheme.colorScheme.primaryContainer
-                                else Color.Transparent
-                            )
-                            .clickable { viewModel.selectedTab.value = 0 }
-                    ) {
-                        Text(
-                            text = "Image",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = if (rawSelected) FontWeight.Bold else FontWeight.Medium,
-                            color = if (rawSelected) MaterialTheme.colorScheme.onPrimaryContainer
-                            else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                            .clip(RoundedCornerShape(28.dp))
+                            .background(MaterialTheme.colorScheme.primaryContainer)
+                    )
 
-                    val ventoySelected = selectedTab == 1
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(44.dp)
-                            .clip(RoundedCornerShape(24.dp))
-                            .background(
-                                if (ventoySelected) MaterialTheme.colorScheme.primaryContainer
-                                else Color.Transparent
-                            )
-                            .clickable { viewModel.selectedTab.value = 1 }
-                    ) {
-                        Text(
-                            text = "Ventoy Setup",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = if (ventoySelected) FontWeight.Bold else FontWeight.Medium,
-                            color = if (ventoySelected) MaterialTheme.colorScheme.onPrimaryContainer
-                            else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-
-            // Options Card: Raw Image Mode
-            AnimatedVisibility(
-                visible = selectedTab == 0,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
-                Card(
-                    shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainer
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(20.dp)) {
-                        Text(
-                            text = "Source Image",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        if (selectedImageUri != null) {
-                            Surface(
-                                shape = RoundedCornerShape(16.dp),
-                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Column(modifier = Modifier.padding(16.dp)) {
-                                    Text(
-                                        text = selectedImageName ?: "Selected Image",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        text = selectedImageUri.toString(),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontFamily = FontFamily.Monospace,
-                                        maxLines = 1,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(12.dp))
-                            OutlinedButton(
-                                onClick = { filePicker.launch(arrayOf("*/*")) },
-                                shape = RoundedCornerShape(20.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("Change File")
-                            }
-                        } else {
-                            Button(
-                                onClick = { filePicker.launch(arrayOf("*/*")) },
-                                shape = RoundedCornerShape(20.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                                ),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(52.dp)
-                            ) {
-                                Text(
-                                    text = "Select Image File",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Options Card: Ventoy Setup Mode
-            AnimatedVisibility(
-                visible = selectedTab == 1,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
-                Card(
-                    shape = RoundedCornerShape(24.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainer
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(20.dp)) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            modifier = Modifier.fillMaxWidth()
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(44.dp)
+                                .clip(RoundedCornerShape(28.dp))
+                                .clickable { viewModel.selectedTab.value = 0 }
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "Ventoy Version",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                ventoyRelease?.let { release ->
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Surface(
-                                        shape = RoundedCornerShape(10.dp),
-                                        color = MaterialTheme.colorScheme.secondaryContainer
-                                    ) {
-                                        Text(
-                                            text = release.version,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                                        )
-                                    }
-                                }
-                            }
-
-                            FilledTonalButton(
-                                onClick = { viewModel.fetchVentoyRelease() },
-                                shape = RoundedCornerShape(16.dp)
-                            ) {
-                                Text("Check Latest")
-                            }
+                            Text(
+                                text = "Image",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Medium,
+                                color = if (selectedTab == 0) MaterialTheme.colorScheme.onPrimaryContainer
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
-                        Spacer(modifier = Modifier.height(12.dp))
 
-                        ventoyRelease?.let { release ->
-                            Surface(
-                                shape = RoundedCornerShape(16.dp),
-                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    modifier = Modifier.padding(16.dp)
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(44.dp)
+                                .clip(RoundedCornerShape(28.dp))
+                                .clickable { viewModel.selectedTab.value = 1 }
+                        ) {
+                            Text(
+                                text = "Ventoy Setup",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Medium,
+                                color = if (selectedTab == 1) MaterialTheme.colorScheme.onPrimaryContainer
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Mode Options Container with Smooth Crossfade
+            Crossfade(
+                targetState = selectedTab,
+                label = "optionsCrossfade"
+            ) { tab ->
+                if (tab == 0) {
+                    Card(
+                        shape = RoundedCornerShape(28.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainer
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(20.dp)) {
+                            Text(
+                                text = "Source Image",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            if (selectedImageUri != null) {
+                                Surface(
+                                    shape = RoundedCornerShape(20.dp),
+                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Column {
+                                    Column(modifier = Modifier.padding(16.dp)) {
                                         Text(
-                                            text = "Ventoy ${release.version}",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.primary
+                                            text = selectedImageName ?: "Selected Image",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurface
                                         )
+                                        Spacer(modifier = Modifier.height(4.dp))
                                         Text(
-                                            text = formatBytes(release.assetSize),
-                                            style = MaterialTheme.typography.bodySmall,
+                                            text = selectedImageUri.toString(),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontFamily = FontFamily.Monospace,
+                                            maxLines = 1,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
-                                    Surface(
-                                        shape = RoundedCornerShape(12.dp),
-                                        color = MaterialTheme.colorScheme.secondaryContainer
-                                    ) {
-                                        Text(
-                                            text = "Official Release",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                }
+                                Spacer(modifier = Modifier.height(12.dp))
+                                OutlinedButton(
+                                    onClick = { filePicker.launch(arrayOf("*/*")) },
+                                    shape = RoundedCornerShape(24.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("Change File")
+                                }
+                            } else {
+                                Button(
+                                    onClick = { filePicker.launch(arrayOf("*/*")) },
+                                    shape = RoundedCornerShape(24.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                    ),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(52.dp)
+                                ) {
+                                    Text(
+                                        text = "Select Image File",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    Card(
+                        shape = RoundedCornerShape(28.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainer
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(20.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "Ventoy Version",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    ventoyRelease?.let { release ->
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Surface(
+                                            shape = RoundedCornerShape(10.dp),
+                                            color = MaterialTheme.colorScheme.secondaryContainer
+                                        ) {
+                                            Text(
+                                                text = release.version,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                }
+
+                                FilledTonalButton(
+                                    onClick = { viewModel.fetchVentoyRelease() },
+                                    enabled = !isCheckingVentoy,
+                                    shape = RoundedCornerShape(20.dp)
+                                ) {
+                                    if (isCheckingVentoy) {
+                                        CircularProgressIndicator(
+                                            strokeWidth = 2.dp,
+                                            modifier = Modifier.size(16.dp),
+                                            color = MaterialTheme.colorScheme.onSecondaryContainer
                                         )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Checking...")
+                                    } else {
+                                        Text("Check Latest")
                                     }
                                 }
                             }
-                            Spacer(modifier = Modifier.height(16.dp))
-                        }
+                            Spacer(modifier = Modifier.height(12.dp))
 
-                        Text(
-                            text = "Partition Scheme",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
+                            ventoyRelease?.let { release ->
+                                Surface(
+                                    shape = RoundedCornerShape(20.dp),
+                                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        modifier = Modifier.padding(16.dp)
+                                    ) {
+                                        Column {
+                                            Text(
+                                                text = "Ventoy ${release.version}",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                            Text(
+                                                text = formatBytes(release.assetSize),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
 
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            val isGpt = selectedScheme == PartitionScheme.GPT
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(44.dp)
-                                    .clip(RoundedCornerShape(20.dp))
-                                    .background(
-                                        if (isGpt) MaterialTheme.colorScheme.primaryContainer
-                                        else MaterialTheme.colorScheme.surfaceContainerHigh
-                                    )
-                                    .clickable { viewModel.selectedPartitionScheme.value = PartitionScheme.GPT }
-                            ) {
-                                Text(
-                                    text = "GPT (UEFI)",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = if (isGpt) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (isGpt) MaterialTheme.colorScheme.onPrimaryContainer
-                                    else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            if (offlineReady) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(12.dp),
+                                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                                    modifier = Modifier.padding(end = 4.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "Offline Ready",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                                    )
+                                                }
+                                            } else {
+                                                FilledTonalButton(
+                                                    onClick = { viewModel.downloadOfflineVentoy() },
+                                                    enabled = !isDownloadingOffline,
+                                                    shape = RoundedCornerShape(16.dp)
+                                                ) {
+                                                    if (isDownloadingOffline) {
+                                                        CircularProgressIndicator(
+                                                            strokeWidth = 2.dp,
+                                                            modifier = Modifier.size(14.dp),
+                                                            color = MaterialTheme.colorScheme.primary
+                                                        )
+                                                        Spacer(modifier = Modifier.width(6.dp))
+                                                        Text("Saving...")
+                                                    } else {
+                                                        Text("Save Offline")
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(16.dp))
                             }
 
-                            val isMbr = selectedScheme == PartitionScheme.MBR
-                            Box(
-                                contentAlignment = Alignment.Center,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(44.dp)
-                                    .clip(RoundedCornerShape(20.dp))
-                                    .background(
-                                        if (isMbr) MaterialTheme.colorScheme.primaryContainer
-                                        else MaterialTheme.colorScheme.surfaceContainerHigh
+                            Text(
+                                text = "Partition Scheme",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                val isGpt = selectedScheme == PartitionScheme.GPT
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(44.dp)
+                                        .clip(RoundedCornerShape(22.dp))
+                                        .background(
+                                            if (isGpt) MaterialTheme.colorScheme.primaryContainer
+                                            else MaterialTheme.colorScheme.surfaceContainerHigh
+                                        )
+                                        .clickable { viewModel.selectedPartitionScheme.value = PartitionScheme.GPT }
+                                ) {
+                                    Text(
+                                        text = "GPT (UEFI)",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = if (isGpt) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isGpt) MaterialTheme.colorScheme.onPrimaryContainer
+                                        else MaterialTheme.colorScheme.onSurfaceVariant
                                     )
-                                    .clickable { viewModel.selectedPartitionScheme.value = PartitionScheme.MBR }
-                            ) {
-                                Text(
-                                    text = "MBR (Legacy)",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = if (isMbr) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (isMbr) MaterialTheme.colorScheme.onPrimaryContainer
-                                    else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                }
+
+                                val isMbr = selectedScheme == PartitionScheme.MBR
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(44.dp)
+                                        .clip(RoundedCornerShape(22.dp))
+                                        .background(
+                                            if (isMbr) MaterialTheme.colorScheme.primaryContainer
+                                            else MaterialTheme.colorScheme.surfaceContainerHigh
+                                        )
+                                        .clickable { viewModel.selectedPartitionScheme.value = PartitionScheme.MBR }
+                                ) {
+                                    Text(
+                                        text = "MBR (Legacy)",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = if (isMbr) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isMbr) MaterialTheme.colorScheme.onPrimaryContainer
+                                        else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
                     }
